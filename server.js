@@ -1,12 +1,19 @@
 
 const express = require("express");
 const cors = require("cors");
+const bcrypt = require("bcryptjs");
 
 const app = express();
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
+// Temporary storage for registered users
+// Data will be lost when the server restarts.
+let users = [];
+
+// Product data
 let products = [
   {
     id: 1,
@@ -110,49 +117,135 @@ let products = [
   }
 ];
 
+// Home route
 app.get("/", (req, res) => {
-  res.send("PetCart API is running!");
+  res.json({
+    message: "PetCart API is running!",
+    endpoints: [
+      "GET /",
+      "GET /products",
+      "POST /products",
+      "GET /register",
+      "POST /register"
+    ]
+  });
 });
 
+// Get all products
 app.get("/products", (req, res) => {
-  res.json(products);
+  res.status(200).json(products);
 });
 
+// Add a product
 app.post("/products", (req, res) => {
+  const { name, price, category, weight, rating, reviews, image } =
+    req.body;
+
+  if (!name || price == null || !category) {
+    return res.status(400).json({
+      message: "Name, price, and category are required"
+    });
+  }
+
   const product = {
     id: Date.now(),
-    ...req.body
+    name,
+    price,
+    category,
+    weight: weight || "",
+    rating: rating ?? 0,
+    reviews: reviews ?? 0,
+    image: image || ""
   };
 
   products.push(product);
-  res.status(201).json(product);
+
+  res.status(201).json({
+    message: "Product added successfully",
+    product
+  });
 });
 
+// Test registration route in a browser
+app.get("/register", (req, res) => {
+  res.status(200).json({
+    message: "PetCart registration API is working!",
+    instruction: "Use POST /register to create an account."
+  });
+});
+
+// Register a user
 app.post("/register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
+    // Validate required fields
+    if (
+      typeof name !== "string" ||
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !name.trim() ||
+      !email.trim() ||
+      !password
+    ) {
       return res.status(400).json({
-        message: "All fields are required",
+        message: "Name, email, and password are required"
       });
     }
 
-    // Registration is not implemented until a database
-    // and secure password hashing are configured.
-    return res.status(501).json({
-      message: "Registration service is not configured yet",
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Basic password validation
+    if (password.length < 8) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters long"
+      });
+    }
+
+    // Check duplicate email
+    const existingUser = users.find(
+      user => user.email === normalizedEmail
+    );
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "Email is already registered"
+      });
+    }
+
+    // Hash password before storing it
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = {
+      id: Date.now(),
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashedPassword
+    };
+
+    users.push(newUser);
+
+    // Never send the password or password hash to the client
+    return res.status(201).json({
+      message: "Registration successful",
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email
+      }
     });
   } catch (error) {
-    res.status(500).json({
-      message: "Server error",
+    console.error("Registration error:", error);
+
+    return res.status(500).json({
+      message: "Internal server error"
     });
   }
 });
 
-
+// Start server
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`PetCart API running on port ${PORT}`);
 });
