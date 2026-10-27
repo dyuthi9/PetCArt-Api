@@ -2,19 +2,120 @@
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const mongoose = require("mongoose");
+require("dotenv").config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+const corsOptions = {
+  origin: [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173"
+  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
-// Temporary storage for registered users
-// Data will be lost when the server restarts.
-let users = [];
+// ==================== MONGODB CONNECTION ====================
 
-// Product data
-let products = [
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(async () => {
+    console.log("MongoDB connected successfully");
+
+    // Add sample products if the collection is empty
+    const productCount = await Product.countDocuments();
+
+    if (productCount === 0) {
+      await Product.insertMany(initialProducts);
+      console.log("Sample products inserted");
+    }
+
+    const PORT = process.env.PORT || 5000;
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`PetCart API running on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error("MongoDB connection failed:", error.message);
+    process.exit(1);
+  });
+
+// ==================== PRODUCT MODEL ====================
+
+const productSchema = new mongoose.Schema({
+  id: {
+    type: Number,
+    unique: true
+  },
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  category: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  weight: {
+    type: String,
+    default: ""
+  },
+  rating: {
+    type: Number,
+    default: 0
+  },
+  reviews: {
+    type: Number,
+    default: 0
+  },
+  image: {
+    type: String,
+    default: ""
+  }
+});
+
+const Product = mongoose.model("Product", productSchema);
+
+// ==================== USER MODEL ====================
+
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
+  password: {
+    type: String,
+    required: true,
+    select: false
+  }
+}, {
+  timestamps: true
+});
+
+const User = mongoose.model("User", userSchema);
+
+// ==================== INITIAL PRODUCTS ====================
+
+const initialProducts = [
   {
     id: 1,
     name: "Royal Canin Dog Food",
@@ -117,7 +218,8 @@ let products = [
   }
 ];
 
-// Home route
+// ==================== HOME ROUTE ====================
+
 app.get("/", (req, res) => {
   res.json({
     message: "PetCart API is running!",
@@ -126,60 +228,95 @@ app.get("/", (req, res) => {
       "GET /products",
       "POST /products",
       "GET /register",
-      "POST /register"
+      "POST /register",
+      "GET /users"
     ]
   });
 });
 
-// Get all products
-app.get("/products", (req, res) => {
-  res.status(200).json(products);
-});
+// ==================== GET ALL PRODUCTS ====================
 
-// Add a product
-app.post("/products", (req, res) => {
-  const { name, price, category, weight, rating, reviews, image } =
-    req.body;
-
-  if (!name || price == null || !category) {
-    return res.status(400).json({
-      message: "Name, price, and category are required"
+app.get("/products", async (req, res) => {
+  try {
+    const products = await Product.find().sort({ id: 1 });
+    res.status(200).json(products);
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch products"
     });
   }
-
-  const product = {
-    id: Date.now(),
-    name,
-    price,
-    category,
-    weight: weight || "",
-    rating: rating ?? 0,
-    reviews: reviews ?? 0,
-    image: image || ""
-  };
-
-  products.push(product);
-
-  res.status(201).json({
-    message: "Product added successfully",
-    product
-  });
 });
 
-// Test registration route in a browser
+// ==================== ADD A PRODUCT ====================
+
+app.post("/products", async (req, res) => {
+  try {
+    const {
+      name,
+      price,
+      category,
+      weight,
+      rating,
+      reviews,
+      image
+    } = req.body;
+
+    if (
+      typeof name !== "string" ||
+      !name.trim() ||
+      price == null ||
+      !Number.isFinite(Number(price)) ||
+      Number(price) < 0 ||
+      typeof category !== "string" ||
+      !category.trim()
+    ) {
+      return res.status(400).json({
+        message: "Valid name, price, and category are required"
+      });
+    }
+
+    const lastProduct = await Product.findOne().sort({ id: -1 });
+    const nextId = lastProduct ? lastProduct.id + 1 : 1;
+
+    const product = await Product.create({
+      id: nextId,
+      name: name.trim(),
+      price: Number(price),
+      category: category.trim(),
+      weight: weight || "",
+      rating: rating ?? 0,
+      reviews: reviews ?? 0,
+      image: image || ""
+    });
+
+    res.status(201).json({
+      message: "Product added successfully",
+      product
+    });
+  } catch (error) {
+    console.error("Add product error:", error);
+
+    res.status(500).json({
+      message: "Failed to add product"
+    });
+  }
+});
+
+// ==================== REGISTER PAGE TEST ====================
+
 app.get("/register", (req, res) => {
-  res.status(200).json({
+  res.json({
     message: "PetCart registration API is working!",
-    instruction: "Use POST /register to create an account."
+    instruction: "Send a POST request to /register to create an account."
   });
 });
 
-// Register a user
+// ==================== REGISTER USER ====================
+
 app.post("/register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validate required fields
     if (
       typeof name !== "string" ||
       typeof email !== "string" ||
@@ -193,19 +330,17 @@ app.post("/register", async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-
-    // Basic password validation
     if (password.length < 8) {
       return res.status(400).json({
         message: "Password must be at least 8 characters long"
       });
     }
 
-    // Check duplicate email
-    const existingUser = users.find(
-      user => user.email === normalizedEmail
-    );
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail
+    });
 
     if (existingUser) {
       return res.status(409).json({
@@ -213,48 +348,50 @@ app.post("/register", async (req, res) => {
       });
     }
 
-    // Hash password before storing it
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = {
-      id: Date.now(),
+    const newUser = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword
-    };
+    });
 
-    users.push(newUser);
-
-    // Never send the password or password hash to the client
-    return res.status(201).json({
+    res.status(201).json({
       message: "Registration successful",
       user: {
-        id: newUser.id,
+        id: newUser._id,
         name: newUser.name,
         email: newUser.email
       }
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "Email is already registered"
+      });
+    }
+
     console.error("Registration error:", error);
 
-    return res.status(500).json({
-      message: "Internal server error"
+    res.status(500).json({
+      message: "Registration failed"
     });
   }
 });
-// Get all registered users
-app.get("/users", (req, res) => {
-  const safeUsers = users.map(user => ({
-    id: user.id,
-    name: user.name,
-    email: user.email
-  }));
 
-  res.status(200).json(safeUsers);
-});
-// Start server
-const PORT = process.env.PORT || 5000;
+// ==================== GET ALL REGISTERED USERS ====================
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`PetCart API running on port ${PORT}`);
+app.get("/users", async (req, res) => {
+  try {
+    const users = await User.find()
+      .select("name email createdAt");
+
+    res.status(200).json(users);
+  } catch (error) {
+    console.error("Fetch users error:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch users"
+    });
+  }
 });
