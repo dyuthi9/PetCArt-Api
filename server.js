@@ -242,7 +242,16 @@ app.post("/register", async (req, res) => {
     });
   }
 });
+// Get all registered users
+app.get("/users", (req, res) => {
+  const safeUsers = users.map(user => ({
+    id: user.id,
+    name: user.name,
+    email: user.email
+  }));
 
+  res.status(200).json(safeUsers);
+});
 // Start server
 const PORT = process.env.PORT || 5000;
 
