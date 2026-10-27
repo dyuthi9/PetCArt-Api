@@ -129,7 +129,27 @@ app.post("/products", (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
+app.post("/register", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
 
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "All fields are required",
+      });
+    }
+
+    // Registration is not implemented until a database
+    // and secure password hashing are configured.
+    return res.status(501).json({
+      message: "Registration service is not configured yet",
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
+});
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
