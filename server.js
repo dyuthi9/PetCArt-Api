@@ -51,7 +51,7 @@ let products = [
   {
     id: 5,
     name: "Comfortable Pet Bed",
-    price: 1299,
+    price: 299,
     category: "Accessories",
     weight: "Medium",
     rating: 4.7,
