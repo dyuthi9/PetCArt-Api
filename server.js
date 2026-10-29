@@ -238,6 +238,7 @@ const authenticateUser = (req, res, next) => {
 app.get("/", (req, res) => {
   res.json({
     message: "PetCart API is running!",
+    version: "2-login-cart-orders",
     endpoints: [
       "GET /",
       "GET /products",
