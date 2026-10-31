@@ -145,6 +145,7 @@ const orderSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+
   items: [{
     productId: mongoose.Schema.Types.ObjectId,
     name: {
@@ -166,11 +167,28 @@ const orderSchema = new mongoose.Schema({
       min: 1
     }
   }],
+
+  address: {
+    fullName: { type: String, required: true },
+    phone: { type: String, required: true },
+    street: { type: String, required: true },
+    city: { type: String, required: true },
+    state: { type: String, required: true },
+    pincode: { type: String, required: true }
+  },
+
+  paymentMethod: {
+    type: String,
+    enum: ["COD", "UPI", "CARD"],
+    required: true
+  },
+
   total: {
     type: Number,
     required: true,
     min: 0
   },
+
   status: {
     type: String,
     enum: [
@@ -182,6 +200,7 @@ const orderSchema = new mongoose.Schema({
     ],
     default: "Pending"
   }
+
 }, {
   timestamps: true
 });
@@ -804,11 +823,54 @@ app.get("/orders", authenticateUser, async (req, res) => {
 
 app.post("/orders", authenticateUser, async (req, res) => {
   try {
-    const cart = await Cart.findOne({ user: req.userId })
-      .populate("items.product");
+
+    const { address, paymentMethod } = req.body;
+
+    // Validate address
+    if (
+      !address ||
+      !address.fullName?.trim() ||
+      !address.phone?.trim() ||
+      !address.street?.trim() ||
+      !address.city?.trim() ||
+      !address.state?.trim() ||
+      !address.pincode?.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide complete delivery address"
+      });
+    }
+
+    if (!/^[0-9]{10}$/.test(address.phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Enter a valid 10-digit phone number"
+      });
+    }
+
+    if (!/^[0-9]{6}$/.test(address.pincode)) {
+      return res.status(400).json({
+        success: false,
+        message: "Enter a valid 6-digit PIN code"
+      });
+    }
+
+    if (!["COD", "UPI", "CARD"].includes(paymentMethod)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a valid payment method"
+      });
+    }
+
+    // Get user's cart
+    const cart = await Cart.findOne({
+      user: req.userId
+    }).populate("items.product");
 
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({
+        success: false,
         message: "Your cart is empty"
       });
     }
@@ -817,10 +879,12 @@ app.post("/orders", authenticateUser, async (req, res) => {
     let total = 0;
 
     for (const cartItem of cart.items) {
+
       const product = cartItem.product;
 
       if (!product) {
         return res.status(400).json({
+          success: false,
           message: "A product in your cart is unavailable"
         });
       }
@@ -829,6 +893,7 @@ app.post("/orders", authenticateUser, async (req, res) => {
 
       if (!Number.isFinite(price) || price < 0) {
         return res.status(400).json({
+          success: false,
           message: "Invalid product price"
         });
       }
@@ -836,7 +901,7 @@ app.post("/orders", authenticateUser, async (req, res) => {
       items.push({
         productId: product._id,
         name: product.name,
-        price,
+        price: price,
         image: product.image || "",
         quantity: cartItem.quantity
       });
@@ -844,26 +909,80 @@ app.post("/orders", authenticateUser, async (req, res) => {
       total += price * cartItem.quantity;
     }
 
+    // Create order with address and payment details
     const order = await Order.create({
       user: req.userId,
       items,
+      address: {
+        fullName: address.fullName.trim(),
+        phone: address.phone.trim(),
+        street: address.street.trim(),
+        city: address.city.trim(),
+        state: address.state.trim(),
+        pincode: address.pincode.trim()
+      },
+      paymentMethod,
       total: Number(total.toFixed(2)),
-      status: "Pending"
+      status: "Confirmed"
     });
 
+    // Clear cart after successful order creation
     cart.items = [];
     await cart.save();
 
     res.status(201).json({
       success: true,
-      message: "Demo order created successfully",
+      message: "Order placed successfully!",
       order
     });
+
   } catch (error) {
-    console.error("Create order error:", error.message);
+
+    console.error("Create order error:", error);
+
     res.status(500).json({
+      success: false,
       message: "Failed to create order"
     });
+
+  }
+});
+
+app.delete("/orders/:orderId", authenticateUser, async (req, res) => {
+  try {
+
+    const { orderId } = req.params;
+
+    if (!mongoose.isValidObjectId(orderId)) {
+      return res.status(400).json({
+        message: "Invalid order ID"
+      });
+    }
+
+    const order = await Order.findOneAndDelete({
+      _id: orderId,
+      user: req.userId
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Order deleted successfully"
+    });
+
+  } catch (error) {
+
+    console.error("Delete order error:", error);
+
+    res.status(500).json({
+      message: "Unable to delete order"
+    });
+
   }
 });
 
