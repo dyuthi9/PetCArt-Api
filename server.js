@@ -12,13 +12,14 @@ const app = express();
 // MIDDLEWARE
 // ==================================================
 
+
+const normalize = (url) => url.replace(/\/+$/, "");
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-    "https://pet-cart-tawny.vercel.app/",
+  "https://pet-cart-tawny.vercel.app",
   process.env.FRONTEND_URL
-].filter(Boolean);
-
+].filter(Boolean).map(normalize);
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
